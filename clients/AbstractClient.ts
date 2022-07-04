@@ -10,15 +10,15 @@ import type {
   QueryT,
   QueryWithString,
 } from "../types.ts";
-import type {
-  AbstractMigration,
-  AbstractMigrationProps,
-} from "../wrappers/AbstractMigration.ts";
+import type { AbstractMigration, AbstractMigrationProps } from "../wrappers/AbstractMigration.ts";
 import { AbstractSeed, AbstractSeedProps } from "../wrappers/AbstractSeed.ts";
 import { COL_FILE_NAME, TABLE_MIGRATIONS } from "../consts.ts";
 import { green } from "../deps.ts";
 import { getDurationFromTimestamp } from "../cli/utils.ts";
 import { NessieError } from "../cli/errors.ts";
+import { logger } from "../utils/logger.ts";
+
+const log = logger({ name: "Migration" });
 
 /** The abstract client which handles most of the logic related to database communication. */
 export abstract class AbstractClient<Client> {
@@ -49,11 +49,7 @@ export abstract class AbstractClient<Client> {
     this.client = options.client;
   }
 
-  protected _parseAmount(
-    amount: AmountRollbackT,
-    maxAmount = 0,
-    isMigration = true,
-  ): number {
+  protected _parseAmount(amount: AmountRollbackT, maxAmount = 0, isMigration = true): number {
     const defaultAmount = isMigration ? maxAmount : 1;
 
     if (amount === "all") return maxAmount;
@@ -65,38 +61,28 @@ export abstract class AbstractClient<Client> {
   }
 
   /** Runs the `up` method on all available migrations after filtering and sorting. */
-  protected async _migrate(
-    amount: AmountMigrateT,
-    latestMigration: string | undefined,
-    queryHandler: QueryHandler,
-  ) {
+  protected async _migrate(amount: AmountMigrateT, latestMigration: string | undefined, queryHandler: QueryHandler) {
     this.logger(amount, "Amount pre");
     this.logger(latestMigration, "Latest migrations");
 
     this._sliceMigrationFiles(latestMigration);
     amount = this._parseAmount(amount, this.migrationFiles.length, true);
 
-    this.logger(
-      this.migrationFiles,
-      "Filtered and sorted migration files",
-    );
+    this.logger(this.migrationFiles, "Filtered and sorted migration files");
 
     if (amount < 1) {
-      console.info("Nothing to migrate");
+      log.info("Nothing to migrate");
       return;
     }
 
-    console.info(
-      green(`Starting migration of ${this.migrationFiles.length} files`),
-      "\n----\n",
-    );
+    log.info(green(`Starting migration of ${this.migrationFiles.length} files`), "\n----\n");
 
     const t1 = performance.now();
 
     for (const [i, file] of this.migrationFiles.entries()) {
       if (i >= amount) break;
 
-      console.info(green(`Migrating ${file.name}`));
+      log.info(green(`Migrating ${file.name}`));
 
       const t2 = performance.now();
 
@@ -104,49 +90,41 @@ export abstract class AbstractClient<Client> {
 
       const duration2 = getDurationFromTimestamp(t2);
 
-      console.info(`Done in ${duration2} seconds\n----\n`);
+      log.info(`Done in ${duration2} seconds\n----\n`);
     }
 
     const duration1 = getDurationFromTimestamp(t1);
 
-    console.info(green(`Migrations completed in ${duration1} seconds`));
+    log.info(green(`Migrations completed in ${duration1} seconds`));
   }
 
   /** Runs the `down` method on defined number of migrations after retrieving them from the DB. */
-  async _rollback(
-    amount: AmountRollbackT,
-    allMigrations: string[] | undefined,
-    queryHandler: QueryHandler,
-  ) {
+  async _rollback(amount: AmountRollbackT, allMigrations: string[] | undefined, queryHandler: QueryHandler) {
     this.logger(allMigrations, "Files to rollback");
     this.logger(amount, "Amount pre");
 
     if (!allMigrations || allMigrations.length < 1) {
-      console.info("Nothing to rollback");
+      log.info("Nothing to rollback");
       return;
     }
 
     amount = this._parseAmount(amount, allMigrations.length, false);
     this.logger(amount, "Received amount to rollback");
 
-    console.info(
-      green(`Starting rollback of ${amount} files`),
-      "\n----\n",
-    );
+    log.info(green(`Starting rollback of ${amount} files`), "\n----\n");
 
     const t1 = performance.now();
 
     for (const [i, fileName] of allMigrations.entries()) {
       if (i >= amount) break;
 
-      const file = this.migrationFiles
-        .find((migrationFile) => migrationFile.name === fileName);
+      const file = this.migrationFiles.find((migrationFile) => migrationFile.name === fileName);
 
       if (!file) {
         throw new NessieError(`Migration file '${fileName}' is not found`);
       }
 
-      console.info(`Rolling back ${file.name}`);
+      log.info(`Rolling back ${file.name}`);
 
       const t2 = performance.now();
 
@@ -154,29 +132,24 @@ export abstract class AbstractClient<Client> {
 
       const duration2 = getDurationFromTimestamp(t2);
 
-      console.info(`Done in ${duration2} seconds\n----\n`);
+      log.info(`Done in ${duration2} seconds\n----\n`);
     }
 
     const duration1 = getDurationFromTimestamp(t1);
 
-    console.info(green(`Rollback completed in ${duration1} seconds`));
+    log.info(green(`Rollback completed in ${duration1} seconds`));
   }
 
   /** Runs the `run` method on seed files. Filters on the matcher. */
   async _seed(matcher = ".+.ts") {
-    const files = this.seedFiles.filter((el) =>
-      el.name === matcher || new RegExp(matcher).test(el.name)
-    );
+    const files = this.seedFiles.filter((el) => el.name === matcher || new RegExp(matcher).test(el.name));
 
     if (files.length < 1) {
-      console.info(`No seed file found with matcher '${matcher}'`);
+      log.info(`No seed file found with matcher '${matcher}'`);
       return;
     }
 
-    console.info(
-      green(`Starting seeding of ${files.length} files`),
-      "\n----\n",
-    );
+    log.info(green(`Starting seeding of ${files.length} files`), "\n----\n");
 
     const t1 = performance.now();
 
@@ -186,11 +159,9 @@ export abstract class AbstractClient<Client> {
         dialect: this.dialect!,
       };
 
-      console.info(`Seeding ${file.name}`);
+      log.info(`Seeding ${file.name}`);
 
-      const SeedClass: new (
-        props: AbstractSeedProps<Client>,
-      ) => AbstractSeed<this> = (await import(file.path)).default;
+      const SeedClass: new (props: AbstractSeedProps<Client>) => AbstractSeed<this> = (await import(file.path)).default;
 
       const seed = new SeedClass({ client: this.client });
 
@@ -200,12 +171,12 @@ export abstract class AbstractClient<Client> {
 
       const duration2 = getDurationFromTimestamp(t2);
 
-      console.info(`Done in ${duration2} seconds\n----\n`);
+      log.info(`Done in ${duration2} seconds\n----\n`);
     }
 
     const duration1 = getDurationFromTimestamp(t1);
 
-    console.info(green(`Seeding completed in ${duration1} seconds`));
+    log.info(green(`Seeding completed in ${duration1} seconds`));
   }
 
   /** Sets the logger for the client. Given by the State. */
@@ -222,8 +193,7 @@ export abstract class AbstractClient<Client> {
   private _sliceMigrationFiles(queryResult: string | undefined): void {
     if (!queryResult) return;
 
-    const sliceIndex = this.migrationFiles
-      .findIndex((file) => file.name >= queryResult);
+    const sliceIndex = this.migrationFiles.findIndex((file) => file.name >= queryResult);
 
     if (sliceIndex !== undefined) {
       this.migrationFiles = this.migrationFiles.slice(sliceIndex + 1);
@@ -231,19 +201,15 @@ export abstract class AbstractClient<Client> {
   }
 
   /** Handles migration files. */
-  private async _migrationHandler(
-    file: FileEntryT,
-    queryHandler: QueryHandler,
-    isDown = false,
-  ) {
+  private async _migrationHandler(file: FileEntryT, queryHandler: QueryHandler, isDown = false) {
     // deno-lint-ignore no-explicit-any
     const exposedObject: Info<any> = {
       dialect: this.dialect!,
     };
 
-    const MigrationClass: new (
-      props: AbstractMigrationProps<Client>,
-    ) => AbstractMigration<this> = (await import(file.path)).default;
+    const MigrationClass: new (props: AbstractMigrationProps<Client>) => AbstractMigration<this> = (
+      await import(file.path)
+    ).default;
 
     const migration = new MigrationClass({ client: this.client });
 

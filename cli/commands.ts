@@ -1,13 +1,5 @@
 import { State } from "./state.ts";
-import {
-  CliffyCommand,
-  CliffyIAction,
-  dirname,
-  exists,
-  format,
-  green,
-  resolve,
-} from "../deps.ts";
+import { CliffyCommand, CliffyIAction, dirname, exists, format, green, resolve } from "../deps.ts";
 import {
   DEFAULT_CONFIG_FILE,
   DEFAULT_MIGRATION_FOLDER,
@@ -26,18 +18,15 @@ import {
 } from "../types.ts";
 import { getConfigTemplate } from "./templates.ts";
 import { isFileUrl, isMigrationFile } from "./utils.ts";
+import { logger } from "../utils/logger.ts";
+
+const log = logger({ name: "Nessie" });
 
 type TCliffyAction<
   // deno-lint-ignore no-explicit-any
   T extends unknown[] = any[],
   O extends CommandOptions = CommandOptions,
-> = CliffyIAction<
-  void,
-  T,
-  void,
-  O,
-  CliffyCommand<void, [], O, void, undefined>
->;
+> = CliffyIAction<void, T, void, O, CliffyCommand<void, [], O, void, undefined>>;
 
 // deno-lint-ignore no-explicit-any
 export const initNessie: TCliffyAction<any[], CommandOptionsInit> = async (
@@ -52,61 +41,51 @@ export const initNessie: TCliffyAction<any[], CommandOptionsInit> = async (
     const fileExists = await exists(filePath);
 
     if (fileExists) {
-      console.info(green("Config file already exists"));
+      log.info(green("Config file already exists"));
     } else {
-      await Deno.writeTextFile(
-        filePath,
-        template,
-      );
+      await Deno.writeTextFile(filePath, template);
 
-      console.info(green("Created config file"));
+      log.info(green("Created config file"));
     }
   }
 
   if (options.mode !== "config") {
-    const migrationFolderExists = await exists(
-      resolve(Deno.cwd(), DEFAULT_MIGRATION_FOLDER),
-    );
-    const seedFolderExists = await exists(
-      resolve(Deno.cwd(), DEFAULT_SEED_FOLDER),
-    );
+    const migrationFolderExists = await exists(resolve(Deno.cwd(), DEFAULT_MIGRATION_FOLDER));
+    const seedFolderExists = await exists(resolve(Deno.cwd(), DEFAULT_SEED_FOLDER));
 
     if (migrationFolderExists) {
-      console.info(green("Migration folder already exists"));
+      log.info(green("Migration folder already exists"));
     } else {
       await Deno.mkdir(resolve(Deno.cwd(), DEFAULT_MIGRATION_FOLDER), {
         recursive: true,
       });
-      await Deno.create(
-        resolve(Deno.cwd(), DEFAULT_MIGRATION_FOLDER, ".gitkeep"),
-      );
-      console.info(green("Created migration folder"));
+      await Deno.create(resolve(Deno.cwd(), DEFAULT_MIGRATION_FOLDER, ".gitkeep"));
+      log.info(green("Created migration folder"));
     }
 
     if (seedFolderExists) {
-      console.info(green("Seed folder already exists"));
+      log.info(green("Seed folder already exists"));
     } else {
       await Deno.mkdir(resolve(Deno.cwd(), DEFAULT_SEED_FOLDER), {
         recursive: true,
       });
       await Deno.create(resolve(Deno.cwd(), DEFAULT_SEED_FOLDER, ".gitkeep"));
-      console.info(green("Created seed folder"));
+      log.info(green("Created seed folder"));
     }
   }
 
-  console.info(SPONSOR_NOTICE);
+  log.info(SPONSOR_NOTICE);
 };
 
 // deno-lint-ignore no-explicit-any
-export const makeMigration: TCliffyAction<any[], CommandOptionsMakeMigration> =
-  async (
-    // deno-lint-ignore no-explicit-any
-    options: any,
-    fileName: string,
-  ) => {
-    const state = await State.init(options);
-    await state.makeMigration(fileName);
-  };
+export const makeMigration: TCliffyAction<any[], CommandOptionsMakeMigration> = async (
+  // deno-lint-ignore no-explicit-any
+  options: any,
+  fileName: string,
+) => {
+  const state = await State.init(options);
+  await state.makeMigration(fileName);
+};
 
 // deno-lint-ignore no-explicit-any
 export const makeSeed: TCliffyAction<any[], CommandOptionsMakeSeed> = async (
@@ -129,20 +108,14 @@ export const seed: TCliffyAction = async (
   await state.client.close();
 };
 
-export const migrate: TCliffyAction = async (
-  options,
-  amount: AmountMigrateT,
-) => {
+export const migrate: TCliffyAction = async (options, amount: AmountMigrateT) => {
   const state = await State.init(options);
   await state.client.prepare();
   await state.client.migrate(amount);
   await state.client.close();
 };
 
-export const rollback: TCliffyAction = async (
-  options,
-  amount: AmountRollbackT,
-) => {
+export const rollback: TCliffyAction = async (options, amount: AmountRollbackT) => {
   const state = await State.init(options);
   await state.client.prepare();
   await state.client.rollback(amount);
@@ -155,10 +128,11 @@ export const updateTimestamps: TCliffyAction = async (options) => {
   await state.client.updateTimestamps();
   await state.client.close();
   const migrationFiles = state.client.migrationFiles
-    .filter((el) =>
-      isFileUrl(el.path) &&
-      REGEXP_MIGRATION_FILE_NAME_LEGACY.test(el.name) &&
-      parseInt(el.name.split("-")[0]) < 1672531200000
+    .filter(
+      (el) =>
+        isFileUrl(el.path) &&
+        REGEXP_MIGRATION_FILE_NAME_LEGACY.test(el.name) &&
+        parseInt(el.name.split("-")[0]) < 1672531200000,
     )
     .map((el) => {
       const filenameArray = el.name.split("-", 2);
@@ -169,7 +143,7 @@ export const updateTimestamps: TCliffyAction = async (options) => {
       const newName = newDateTime + "_" + filename;
 
       if (!isMigrationFile(newName)) {
-        console.warn(
+        log.warn(
           `Migration ${el.name} has been updated to ${newName}, but this is not a valid filename. Please change this filename manually. See the method 'isMigrationFile' from 'mod.ts' for filename validation`,
         );
       }
@@ -184,24 +158,19 @@ export const updateTimestamps: TCliffyAction = async (options) => {
     await Deno.rename(oldPath, newPath);
   }
 
-  const output = migrationFiles
-    .map(({ oldPath, newPath }) => `${oldPath} => ${newPath}`)
-    .join("\n");
+  const output = migrationFiles.map(({ oldPath, newPath }) => `${oldPath} => ${newPath}`).join("\n");
 
-  console.info(output);
+  log.info(output);
 };
 
 // deno-lint-ignore no-explicit-any
-export const status: TCliffyAction<any[], CommandOptionsStatus> = async (
-  options,
-) => {
+export const status: TCliffyAction<any[], CommandOptionsStatus> = async (options) => {
   const state = await State.init(options);
   await state.client.prepare();
   const allCompletedMigrations = await state.client.getAll();
   await state.client.close();
 
-  const newAvailableMigrations = state.client.migrationFiles
-    .filter((el) => !allCompletedMigrations.includes(el.name));
+  const newAvailableMigrations = state.client.migrationFiles.filter((el) => !allCompletedMigrations.includes(el.name));
 
   // deno-lint-ignore no-explicit-any
   const outputJson: Record<string, any> = {
@@ -211,16 +180,14 @@ export const status: TCliffyAction<any[], CommandOptionsStatus> = async (
   };
 
   if (options.fileNames) {
-    outputJson.totalAvailableMigrationFileNames = state.client.migrationFiles
-      .map((el) => el.name);
+    outputJson.totalAvailableMigrationFileNames = state.client.migrationFiles.map((el) => el.name);
     outputJson.completedMigrationNames = allCompletedMigrations;
-    outputJson.newAvailableMigrationNames = state.client.migrationFiles
-      .map((el) => el.name);
+    outputJson.newAvailableMigrationNames = state.client.migrationFiles.map((el) => el.name);
   }
 
   switch (options.output) {
     case "json":
-      console.info(JSON.stringify(outputJson, undefined, 0));
+      log.info(JSON.stringify(outputJson, undefined, 0));
       break;
     case "log":
     default:
@@ -230,8 +197,7 @@ export const status: TCliffyAction<any[], CommandOptionsStatus> = async (
           output += `\t${str}\n`;
         };
 
-        output +=
-          `totalAvailableMigrationFiles: ${outputJson.totalAvailableMigrationFiles}\n`;
+        output += `totalAvailableMigrationFiles: ${outputJson.totalAvailableMigrationFiles}\n`;
         if (options.fileNames) {
           outputJson.totalAvailableMigrationFileNames.forEach(tabbedLines);
         }
@@ -241,13 +207,12 @@ export const status: TCliffyAction<any[], CommandOptionsStatus> = async (
           outputJson.completedMigrationNames.forEach(tabbedLines);
         }
 
-        output +=
-          `newAvailableMigrations: ${outputJson.newAvailableMigrations}\n`;
+        output += `newAvailableMigrations: ${outputJson.newAvailableMigrations}\n`;
         if (options.fileNames) {
           outputJson.newAvailableMigrationNames.forEach(tabbedLines);
         }
 
-        console.info(output);
+        log.info(output);
       }
       break;
   }

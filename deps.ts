@@ -39,3 +39,5 @@ export {
 
 /** SQLite */
 export { DB as SQLiteClient } from "https://deno.land/x/sqlite@v3.3.1/mod.ts";
+
+export * from "https://deno.land/std@0.146.0/fmt/colors.ts";
